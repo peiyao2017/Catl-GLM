@@ -1,3 +1,5 @@
+library(CatlGLM)
+
 set.seed(1)
 
 nt <- 50
