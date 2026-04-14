@@ -1,6 +1,3 @@
-library(devtools)
-devtools::load_all("C:/Users/chenw20/OneDrive - NYU Langone Health/Desktop/Catl-GLM")
-
 set.seed(1)
 
 nt <- 50
