@@ -1,0 +1,11 @@
+useDynLib(CatlGLM, .registration = TRUE)
+
+export(CatlGLM_binomial)
+export(CatlGLM_inf)
+export(CatlGLM_linear)
+importFrom(Rcpp, evalCpp)
+
+import(foreach)
+importFrom(assertthat, is.string)
+importFrom(doParallel, registerDoParallel, stopImplicitCluster)
+importFrom(stats, qnorm, sd)

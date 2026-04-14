@@ -1,0 +1,27 @@
+Package: CatlGLM
+Type: Package
+Title: Compositional Adaptive Transfer Learning with Zero-Sum Constraints
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Peiyao", family = "Wang", email = "Peiyao.Wang@nyulangone.org", role = c("aut", "cre")),
+    person(given = "Weixi", family = "Chen", email = "weixi.chen@nyulangone.org", role = "aut")
+    )
+Description: Tools for adaptive transfer learning in linear and logistic
+    regression with compositional covariates subject to zero-sum constraints,
+    together with de-biased confidence intervals.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports:
+    Rcpp,
+    foreach,
+    doParallel,
+    assertthat,
+    glmtrans,
+    stats
+Suggests:
+    doFuture,
+    doRNG
+LinkingTo:
+    Rcpp
+NeedsCompilation: yes
