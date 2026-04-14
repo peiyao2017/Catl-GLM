@@ -10,8 +10,10 @@ The package implements adaptive transfer learning for compositional covariates u
 
 ## Installation
 
-After unzipping the package source, install from the package directory with:
+Use this package with:
 
 ```r
-install.packages("path/to/CatlGLM_pkg", repos = NULL, type = "source")
+install.packages("remotes")
+library(remotes)
+remotes::install_github("JoJoWeixiChen1/Catl-GLM")
 ```
