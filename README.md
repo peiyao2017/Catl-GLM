@@ -1,6 +1,6 @@
 ---
 title: "CATL Simulation and Implementation"
-author: "Peiyao Wang, Weixi Chen"
+author: "Peiyao Wang, Weixi Chen, Jiyuan Hu"
 ---
 
 # Overview
