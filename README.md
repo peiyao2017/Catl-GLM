@@ -1,7 +1,6 @@
 ---
 title: "CATL Simulation and Implementation"
-author: " "
-output: html_document
+author: "Peiyao Wang, Weixi Chen"
 ---
 
 # Overview
