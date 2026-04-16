@@ -1,67 +1,164 @@
 ## ================================================================
-##  Logistic transfer learning code
+##  Logistic transfer learning code (cleaned, NA-safe)
 ## ================================================================
 
 info_logistic_n <- function(y, X, beta) {
-  X=cbind(1,X)
   X <- as.matrix(X)
   y <- as.numeric(y)
   beta <- as.numeric(beta)
-
+  
   n <- length(y)
-
-  if (nrow(X) != n)
+  
+  ## beta always contains an intercept slot in position 1
+  if (ncol(X) == length(beta) - 1) {
+    X <- cbind(1, X)
+  }
+  
+  if (nrow(X) != n) {
     stop("X and y dimension mismatch")
-  if (ncol(X) != length(beta))
-    stop("beta length mismatch")
-
+  }
+  if (ncol(X) != length(beta)) {
+    stop(sprintf(
+      "beta length mismatch: ncol(X) = %d, length(beta) = %d",
+      ncol(X), length(beta)
+    ))
+  }
+  
   eta <- as.vector(X %*% beta)
-
-  # numerically stable logistic
-  p <- 1 / (1 + exp(-eta))
-
+  
+  ## numerically stable logistic probability
+  p <- plogis(eta)
   w <- p * (1 - p)
-
+  w[!is.finite(w)] <- 0
+  
   WX <- X * w
-
   I <- t(X) %*% WX / n
-
-  return(I)
+  
+  I
 }
-
 
 psi_logit <- function(u) {
-  # Numerically stable log(1 + exp(u))
   out <- numeric(length(u))
   large <- u > 0
-  out[large] <- u[large] + log1p(exp(-u[large]))  # stable when u > 0
-  out[!large] <- log1p(exp(u[!large]))            # stable when u <= 0
-  return(out)
+  out[large] <- u[large] + log1p(exp(-u[large]))
+  out[!large] <- log1p(exp(u[!large]))
+  out
 }
 
-
-
 loss_logit <- function(beta, y, X) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  beta <- as.numeric(beta)
+  
+  ## beta always contains an intercept slot in position 1
+  if (ncol(X) == length(beta) - 1) {
+    X <- cbind(1, X)
+  }
+  
+  if (nrow(X) != length(y)) {
+    stop("X and y dimension mismatch in loss_logit")
+  }
+  if (ncol(X) != length(beta)) {
+    stop(sprintf(
+      "loss_logit: ncol(X) = %d, length(beta) = %d",
+      ncol(X), length(beta)
+    ))
+  }
+  
   eta <- as.vector(X %*% beta)
-  # Compute stable psi_logit for each eta
   psi_vals <- psi_logit(eta)
-  # Negative log-likelihood divided by n
-  loss <- -2*sum(y * eta - psi_vals) / length(y)
-  return(loss)
+  loss <- -2 * sum(y * eta - psi_vals) / length(y)
+  
+  if (!is.finite(loss)) {
+    return(Inf)
+  }
+  
+  loss
 }
 
 rho_logit <- function(u) {
-  # You can keep this simple if you always use it as 1
   rep(1, length(u))
 }
 
-
-loss_logit_compare=function(beta,X,y){
-  loss=sum(log(1+exp(X%*%beta))-y*(X%*%beta))
-  return(loss/length(y))
+loss_logit_compare <- function(beta, X, y) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  beta <- as.numeric(beta)
+  
+  if (ncol(X) == length(beta) - 1) {
+    X <- cbind(1, X)
+  }
+  
+  eta <- as.vector(X %*% beta)
+  loss <- sum(psi_logit(eta) - y * eta)
+  loss / length(y)
 }
 
+.drop_na_xy <- function(X, y) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  
+  keep <- complete.cases(X) & is.finite(y)
+  X <- X[keep, , drop = FALSE]
+  y <- y[keep]
+  
+  if (nrow(X) == 0) {
+    stop("All observations were removed after NA filtering")
+  }
+  
+  list(X = X, y = y)
+}
 
+.safe_scale <- function(X) {
+  X <- as.matrix(X)
+  sds <- apply(X, 2, sd, na.rm = TRUE)
+  sds[!is.finite(sds) | sds == 0] <- 1
+  
+  mus <- colMeans(X, na.rm = TRUE)
+  Xs <- sweep(X, 2, mus, "-")
+  Xs <- sweep(Xs, 2, sds, "/")
+  Xs[!is.finite(Xs)] <- 0
+  Xs
+}
+
+.make_lambda_seq <- function(X, y, nlam = 40) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  
+  if (nrow(X) != length(y)) {
+    stop("X and y dimension mismatch in make_lambda_seq")
+  }
+  
+  tmp <- .drop_na_xy(X, y)
+  X <- tmp$X
+  y <- tmp$y
+  
+  Xs <- .safe_scale(X)
+  r <- y - mean(y)
+  r[!is.finite(r)] <- 0
+  
+  grad <- drop(crossprod(Xs, r)) / nrow(Xs)
+  grad[!is.finite(grad)] <- 0
+  
+  lambda_max <- max(abs(grad), na.rm = TRUE)
+  
+  if (!is.finite(lambda_max) || lambda_max <= 0) {
+    lambda_max <- 1e-3
+  }
+  
+  lambda_min_ratio <- 1e-4
+  
+  if (nlam <= 1) {
+    return(lambda_max)
+  }
+  
+  lambda_max * (lambda_min_ratio)^((seq_len(nlam) - 1) / (nlam - 1))
+}
+
+.safe_mean <- function(x) {
+  if (all(is.na(x))) return(Inf)
+  mean(x, na.rm = TRUE)
+}
 
 transfer_binary_fix <- function(lambda = 1,
                                 X, y,
@@ -72,16 +169,36 @@ transfer_binary_fix <- function(lambda = 1,
                                 c = rep(1, ncol(X)),
                                 r = 10,
                                 use_linesearch = TRUE) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  beta0 <- as.numeric(beta0)
+  c <- as.numeric(c)
+  
   p <- ncol(X)
-  beta_prev <- as.numeric(beta0)
+  
+  if (length(y) != nrow(X) || length(beta0) != p || length(c) != p) {
+    stop("Dimension mismatch in transfer_binary_fix")
+  }
+  
+  if (length(lambda) != 1 || is.na(lambda) || !is.finite(lambda) || lambda < 0) {
+    stop("lambda must be a finite scalar >= 0")
+  }
+  
+  beta_prev <- beta0
   y_prev <- beta_prev
-
+  
   if (is.null(t0)) {
     smax <- base::svd(X, nu = 0, nv = 0)$d[1]
     L <- (smax^2) / (4 * nrow(X))
     t_k <- 1 / L
-  } else t_k <- t0
-
+  } else {
+    t_k <- t0
+  }
+  
+  if (!is.finite(t_k) || t_k <= 0) {
+    t_k <- 1
+  }
+  
   for (k in 1:maxit) {
     if (use_linesearch) {
       t_try <- t_k
@@ -96,22 +213,24 @@ transfer_binary_fix <- function(lambda = 1,
       }
       t_k <- t_try
     }
-
+    
     gy <- grad_g_cpp(y_prev, X, y)
     v  <- y_prev - t_k * gy
     u  <- soft_thresh_cpp(v, t_k * lambda)
     beta_k <- proj_ker_ct_cpp(u, c)
-
+    
     y_k <- beta_k + ((k - 1) / (k + r - 1)) * (beta_k - beta_prev)
-    if (max(abs(beta_k - beta_prev)) < tol)
+    
+    if (max(abs(beta_k - beta_prev)) < tol) {
       return(list(beta = beta_k, y = y_k, t = t_k, iter = k, converged = TRUE))
-
+    }
+    
     beta_prev <- beta_k
     y_prev <- y_k
   }
+  
   list(beta = beta_prev, y = y_prev, t = t_k, iter = maxit, converged = FALSE)
 }
-
 
 debias_binary_fix <- function(lambda = 1,
                               X, y,
@@ -123,11 +242,25 @@ debias_binary_fix <- function(lambda = 1,
                               c = rep(1, ncol(X)),
                               r = 10,
                               use_linesearch = TRUE) {
+  X <- as.matrix(X)
+  y <- as.numeric(y)
+  beta0 <- as.numeric(beta0)
+  betaA <- as.numeric(betaA)
+  c <- as.numeric(c)
+  
   p <- ncol(X)
-  beta_prev <- as.numeric(beta0)
-  y_prev    <- beta_prev
-
-  # safe initial step size
+  
+  if (length(y) != nrow(X) || length(beta0) != p || length(betaA) != p || length(c) != p) {
+    stop("Dimension mismatch in debias_binary_fix")
+  }
+  
+  if (length(lambda) != 1 || is.na(lambda) || !is.finite(lambda) || lambda < 0) {
+    stop("lambda must be a finite scalar >= 0")
+  }
+  
+  beta_prev <- beta0
+  y_prev <- beta_prev
+  
   if (is.null(t0)) {
     smax <- base::svd(X, nu = 0, nv = 0)$d[1]
     L <- (smax^2) / (4 * nrow(X))
@@ -135,9 +268,12 @@ debias_binary_fix <- function(lambda = 1,
   } else {
     t_k <- t0
   }
-
+  
+  if (!is.finite(t_k) || t_k <= 0) {
+    t_k <- 1
+  }
+  
   for (k in 1:maxit) {
-    # ----- backtracking line search -----
     if (use_linesearch) {
       t_try <- t_k
       gy <- grad_g_cpp(y_prev, X, y)
@@ -151,17 +287,14 @@ debias_binary_fix <- function(lambda = 1,
       }
       t_k <- t_try
     }
-
-    # ----- proximal debias update -----
+    
     gy <- grad_g_cpp(y_prev, X, y)
     v  <- y_prev - t_k * gy
     u  <- soft_thresh_debias_cpp(v, betaA, t_k * lambda)
     beta_k <- proj_ker_ct_cpp(u, c)
-
-    # ----- acceleration -----
+    
     y_k <- beta_k + ((k - 1) / (k + r - 1)) * (beta_k - beta_prev)
-
-    # ----- stopping -----
+    
     if (max(abs(beta_k - beta_prev)) < tol) {
       return(list(beta = beta_k,
                   y = y_k,
@@ -169,11 +302,11 @@ debias_binary_fix <- function(lambda = 1,
                   iter = k,
                   converged = TRUE))
     }
-
+    
     beta_prev <- beta_k
-    y_prev    <- y_k
+    y_prev <- y_k
   }
-
+  
   list(beta = beta_prev,
        y = y_prev,
        t = t_k,
@@ -181,214 +314,211 @@ debias_binary_fix <- function(lambda = 1,
        converged = FALSE)
 }
 
-
-
-transfer_logistic=function(source=NULL,
-                           target=NULL,
-                           lambda_beta=NULL,lambda_delta=NULL,
-                           nfold=3,beta_start=NULL,delta_start=NULL,maxit=600,tol_transfer=1e-6,
-                           tol_debias=1e-6,Ncov=0,nlam=40,intercept=1,C=NULL){
-
-
-  if(is.null(C)){
-    C=rep(1,times=ncol(target$x)-Ncov)
+transfer_logistic <- function(source = NULL,
+                              target = NULL,
+                              lambda_beta = NULL, lambda_delta = NULL,
+                              nfold = 3, beta_start = NULL, delta_start = NULL, maxit = 600, tol_transfer = 1e-6,
+                              tol_debias = 1e-6, Ncov = 0, nlam = 40, intercept = 1, C = NULL) {
+  
+  target$x <- as.matrix(target$x)
+  target$y <- as.numeric(target$y)
+  
+  tmp <- .drop_na_xy(target$x, target$y)
+  target$x <- tmp$X
+  target$y <- tmp$y
+  
+  for (j in seq_along(source)) {
+    source[[j]]$x <- as.matrix(source[[j]]$x)
+    source[[j]]$y <- as.numeric(source[[j]]$y)
+    tmp <- .drop_na_xy(source[[j]]$x, source[[j]]$y)
+    source[[j]]$x <- tmp$X
+    source[[j]]$y <- tmp$y
   }
-  if(!intercept){
-    for(i in 0:length(source)){
-      if(i==0){
-        X_all=target$x
-        y_all=target$y
-      }
-      if(i>0){
-        X_all=rbind(X_all,source[[i]]$x)
-        y_all=c(y_all,source[[i]]$y)
-      }
-    }
-    reor=sample(c(1:nrow(X_all)),size=nrow(X_all),replace = FALSE)
-    X_all=X_all[reor,]
-    y_all=y_all[reor]
-    X_target=target$x
-    y_target=target$y
-    p=ncol(X_all)
-    Nmicro=p-Ncov
-
-
-    if(is.null(beta_start)){
-      beta_start=rep(0,times=p)
-    }
-    if(is.null(delta_start)){
-      delta_start=rep(0,times=p)
-    }
-    Id=diag(1,nrow=p,ncol=p)
-    c_use=c(rep(0,times=Ncov),C)
-    Pc=c_use%*%t(c_use)/Nmicro
-    X_all=X_all%*%(Id-Pc)
-    X_target=X_target%*%(Id-Pc)
-
-
-    if(is.null(lambda_beta)){
-      x_std_transfer=base::scale(X_all,center = TRUE,scale=TRUE)
-      p_hat_transfer=mean(y_all)
-      r_transfer=y_all - p_hat_transfer
-      alpha=1
-      grad=drop(crossprod(x_std_transfer, r_transfer)) / nrow(x_std_transfer)
-      lambda_max_transfer=max(abs(grad)) / alpha
-      lambda_min_ratio_transfer=if (nrow(x_std_transfer) > p) 1e-4 else 1e-4
-      lambda_beta=lambda_max_transfer * (lambda_min_ratio_transfer) ^ ((seq_len(nlam) - 1) / (nlam - 1))
-    }
-    if(is.null(lambda_delta)){
-      x_std_debias=base::scale(X_target,center = TRUE,scale=TRUE)
-      p_hat_debias=mean(y_target)
-      r_debias=y_target - p_hat_debias
-      alpha=1
-      grad=drop(crossprod(x_std_debias, r_debias)) / nrow(x_std_debias)
-      lambda_max_debias=max(abs(grad)) / alpha
-      lambda_min_ratio_debias=if (nrow(x_std_debias) > p) 1e-4 else 1e-4
-      lambda_delta=lambda_max_debias * (lambda_min_ratio_debias) ^ ((seq_len(nlam) - 1) / (nlam - 1))
-    }
+  
+  if (is.null(C)) {
+    C <- rep(1, times = ncol(target$x) - Ncov)
   }
-
-  if(intercept){
-    for(i in 0:length(source)){
-      if(i==0){
-        X_all=cbind(1,target$x)
-        y_all=target$y
+  
+  if (!intercept) {
+    for (i in 0:length(source)) {
+      if (i == 0) {
+        X_all <- target$x
+        y_all <- target$y
       }
-      if(i>0){
-        X_all=rbind(X_all,cbind(1,source[[i]]$x))
-        y_all=c(y_all,source[[i]]$y)
+      if (i > 0) {
+        X_all <- rbind(X_all, source[[i]]$x)
+        y_all <- c(y_all, source[[i]]$y)
       }
     }
-    reor=sample(c(1:nrow(X_all)),size=nrow(X_all),replace = FALSE)
-    X_all=X_all[reor,]
-    y_all=y_all[reor]
-    X_target=cbind(1,target$x)
-    y_target=target$y
-    p=ncol(X_all)
-    Nmicro=p-Ncov-1
-
-
-    if(is.null(beta_start)){
-      beta_start=rep(0,times=p)
+    
+    reor <- sample(c(1:nrow(X_all)), size = nrow(X_all), replace = FALSE)
+    X_all <- X_all[reor, , drop = FALSE]
+    y_all <- y_all[reor]
+    X_target <- target$x
+    y_target <- target$y
+    p <- ncol(X_all)
+    
+    if (is.null(beta_start)) {
+      beta_start <- rep(0, times = p)
     }
-    if(is.null(delta_start)){
-      delta_start=rep(0,times=p)
+    if (is.null(delta_start)) {
+      delta_start <- rep(0, times = p)
     }
-    Id=diag(1,nrow=p,ncol=p)
-    c_use=c(rep(0,times=Ncov+1),C)
-    Pc=c_use%*%t(c_use)/Nmicro
-    X_all=X_all%*%(Id-Pc)
-    X_target=X_target%*%(Id-Pc)
-
-    if(is.null(lambda_beta)){
-      x_std_transfer=base::scale(X_all[,-1],center = TRUE,scale=TRUE)
-      p_hat_transfer=mean(y_all)
-      r_transfer=y_all - p_hat_transfer
-      alpha=1
-      grad=drop(crossprod(x_std_transfer, r_transfer)) / nrow(x_std_transfer)
-      lambda_max_transfer=max(abs(grad)) / alpha
-      lambda_min_ratio_transfer=if (nrow(x_std_transfer) > p) 1e-4 else 1e-4
-      lambda_beta=lambda_max_transfer * (lambda_min_ratio_transfer) ^ ((seq_len(nlam) - 1) / (nlam - 1))
+    
+    Id <- diag(1, nrow = p, ncol = p)
+    c_use <- c(rep(0, times = Ncov), C)
+    Pc <- c_use %*% t(c_use) / sum(c_use^2)
+    X_all <- X_all %*% (Id - Pc)
+    X_target <- X_target %*% (Id - Pc)
+    
+    tmp_all <- .drop_na_xy(X_all, y_all)
+    X_all <- tmp_all$X
+    y_all <- tmp_all$y
+    
+    tmp_tar <- .drop_na_xy(X_target, y_target)
+    X_target <- tmp_tar$X
+    y_target <- tmp_tar$y
+    
+    if (is.null(lambda_beta)) {
+      lambda_beta <- .make_lambda_seq(X_all, y_all, nlam = nlam)
     }
-    if(is.null(lambda_delta)){
-      x_std_debias=base::scale(X_target[,-1],center = TRUE,scale=TRUE)
-      p_hat_debias=mean(y_target)
-      r_debias=y_target - p_hat_debias
-      alpha=1
-      grad=drop(crossprod(x_std_debias, r_debias)) / nrow(x_std_debias)
-      lambda_max_debias=max(abs(grad)) / alpha
-      lambda_min_ratio_debias=if (nrow(x_std_debias) > p) 1e-4 else 1e-4
-      lambda_delta=lambda_max_debias * (lambda_min_ratio_debias) ^ ((seq_len(nlam) - 1) / (nlam - 1))
+    if (is.null(lambda_delta)) {
+      lambda_delta <- .make_lambda_seq(X_target, y_target, nlam = nlam)
     }
   }
-
-  loss_trans=rep(0,times=length(lambda_beta))
-  loss_debias=rep(0,times=length(lambda_delta))
-
-  betaA_total=matrix(0,nrow=length(lambda_beta),ncol=p)
-
-  for(i1 in 1:length(lambda_beta)){
-
-    loss=rep(0,times=nfold)
-    lambda_beta1=lambda_beta[i1]
-    for(i2 in 1:nfold){
-
-      c1=1:nrow(X_all)
-      m1=round(nrow(X_all)/nfold,digits = 0)
-      test=c1[(1+(i2-1)*m1):min((i2*m1),nrow(X_all))]
-      X_all_train=X_all[-test,]
-      y_all_train=y_all[-test]
-      X_all_test=X_all[test,]
-      y_all_test=y_all[test]
-
-      betaA=transfer_binary_fix(lambda = lambda_beta1,
-                                X=X_all_train, y=y_all_train,
-                                t0 = NULL,
-                                beta0 = beta_start,
-                                tol = tol_transfer,
-                                maxit = maxit,
-                                c = c_use,
-                                r = 10,
-                                use_linesearch = TRUE)
-      betaA=betaA$beta
-      loss[i2]=loss_logit(beta=betaA,y=y_all_test,X=X_all_test)
+  
+  if (intercept) {
+    for (i in 0:length(source)) {
+      if (i == 0) {
+        X_all <- cbind(1, target$x)
+        y_all <- target$y
+      }
+      if (i > 0) {
+        X_all <- rbind(X_all, cbind(1, source[[i]]$x))
+        y_all <- c(y_all, source[[i]]$y)
+      }
     }
-    loss_trans[i1]=mean(loss)
-
-    betaA_total[i1,]=betaA
-
+    
+    reor <- sample(c(1:nrow(X_all)), size = nrow(X_all), replace = FALSE)
+    X_all <- X_all[reor, , drop = FALSE]
+    y_all <- y_all[reor]
+    X_target <- cbind(1, target$x)
+    y_target <- target$y
+    p <- ncol(X_all)
+    
+    if (is.null(beta_start)) {
+      beta_start <- rep(0, times = p)
+    }
+    if (is.null(delta_start)) {
+      delta_start <- rep(0, times = p)
+    }
+    
+    Id <- diag(1, nrow = p, ncol = p)
+    c_use <- c(rep(0, times = Ncov + 1), C)
+    Pc <- c_use %*% t(c_use) / sum(c_use^2)
+    X_all <- X_all %*% (Id - Pc)
+    X_target <- X_target %*% (Id - Pc)
+    
+    tmp_all <- .drop_na_xy(X_all, y_all)
+    X_all <- tmp_all$X
+    y_all <- tmp_all$y
+    
+    tmp_tar <- .drop_na_xy(X_target, y_target)
+    X_target <- tmp_tar$X
+    y_target <- tmp_tar$y
+    
+    if (is.null(lambda_beta)) {
+      lambda_beta <- .make_lambda_seq(X_all[, -1, drop = FALSE], y_all, nlam = nlam)
+    }
+    if (is.null(lambda_delta)) {
+      lambda_delta <- .make_lambda_seq(X_target[, -1, drop = FALSE], y_target, nlam = nlam)
+    }
   }
-  lambda_beta_use=max(lambda_beta[round(loss_trans,digits = 4)==min(round(loss_trans,digits = 4))])
-  lambda_beta_index=max(c(1:length(lambda_beta))[round(loss_trans,digits = 4)==min(round(loss_trans,digits = 4))])
-  betaA=transfer_binary_fix(lambda = lambda_beta_use,
-                            X=X_all, y=y_all,
+  
+  loss_trans <- rep(NA_real_, times = length(lambda_beta))
+  loss_debias <- rep(NA_real_, times = length(lambda_delta))
+  betaA_total <- matrix(0, nrow = length(lambda_beta), ncol = p)
+  
+  for (i1 in 1:length(lambda_beta)) {
+    loss <- rep(NA_real_, times = nfold)
+    lambda_beta1 <- lambda_beta[i1]
+    betaA <- NULL
+    
+    for (i2 in 1:nfold) {
+      c1 <- 1:nrow(X_all)
+      m1 <- round(nrow(X_all) / nfold, digits = 0)
+      test <- c1[(1 + (i2 - 1) * m1):min((i2 * m1), nrow(X_all))]
+      
+      X_all_train <- X_all[-test, , drop = FALSE]
+      y_all_train <- y_all[-test]
+      X_all_test <- X_all[test, , drop = FALSE]
+      y_all_test <- y_all[test]
+      
+      fit_try <- tryCatch(
+        transfer_binary_fix(lambda = lambda_beta1,
+                            X = X_all_train, y = y_all_train,
                             t0 = NULL,
                             beta0 = beta_start,
                             tol = tol_transfer,
                             maxit = maxit,
                             c = c_use,
                             r = 10,
-                            use_linesearch = TRUE)
-  betaA=betaA$beta
-  #betaA=betaA_total[lambda_beta_index,]
-  delta_total=matrix(0,nrow=length(lambda_delta),ncol=p)
-
-  for(i1 in 1:length(lambda_delta)){
-
-    loss=rep(0,times=nfold)
-    lambda_delta1=lambda_delta[i1]
-    for(i2 in 1:nfold){
-
-      c1=1:nrow(X_target)
-      m1=round(nrow(X_target)/nfold,digits = 0)
-      test=c1[(1+(i2-1)*m1):min((i2*m1),nrow(X_target))]
-      y_target_train=y_target[-test]
-      X_target_train=X_target[-test,]
-      y_target_test=y_target[test]
-      X_target_test=X_target[test,]
-
-      delta=debias_binary_fix(lambda = lambda_delta1,
-                              X=X_target_train, y=y_target_train,
-                              t0 = NULL,
-                              beta0 = delta_start,
-                              betaA = betaA,
-                              tol = tol_debias,
-                              maxit = maxit,
-                              c = c_use,
-                              r = 10,
-                              use_linesearch = TRUE)
-      delta=delta$beta
-      loss[i2]=loss_logit(beta=delta,y=y_target_test,X=X_target_test)
-
+                            use_linesearch = TRUE),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(fit_try)) {
+        betaA <- fit_try$beta
+        loss[i2] <- loss_logit(beta = betaA, y = y_all_test, X = X_all_test)
+      }
     }
-    loss_debias[i1]=mean(loss)
-    delta_total[i1,]=delta
-
+    
+    loss_trans[i1] <- .safe_mean(loss)
+    
+    if (!is.null(betaA)) {
+      betaA_total[i1, ] <- betaA
+    }
   }
-  lambda_delta_use=max(lambda_delta[round(loss_debias,digits = 4)==min(round(loss_debias,digits = 4))])
-  lambda_delta_index=max(c(1:length(lambda_delta))[round(loss_debias,digits = 4)==min(round(loss_debias,digits = 4))])
-  delta=debias_binary_fix(lambda = lambda_delta_use,
-                          X=X_target, y=y_target,
+  
+  good_idx_beta <- which(is.finite(loss_trans))
+  if (length(good_idx_beta) == 0) {
+    stop("All transfer lambda values failed")
+  }
+  
+  min_loss_beta <- min(round(loss_trans[good_idx_beta], digits = 4))
+  lambda_beta_use <- max(lambda_beta[round(loss_trans, digits = 4) == min_loss_beta])
+  
+  betaA <- transfer_binary_fix(lambda = lambda_beta_use,
+                               X = X_all, y = y_all,
+                               t0 = NULL,
+                               beta0 = beta_start,
+                               tol = tol_transfer,
+                               maxit = maxit,
+                               c = c_use,
+                               r = 10,
+                               use_linesearch = TRUE)
+  betaA <- betaA$beta
+  
+  delta_total <- matrix(0, nrow = length(lambda_delta), ncol = p)
+  
+  for (i1 in 1:length(lambda_delta)) {
+    loss <- rep(NA_real_, times = nfold)
+    lambda_delta1 <- lambda_delta[i1]
+    delta <- NULL
+    
+    for (i2 in 1:nfold) {
+      c1 <- 1:nrow(X_target)
+      m1 <- round(nrow(X_target) / nfold, digits = 0)
+      test <- c1[(1 + (i2 - 1) * m1):min((i2 * m1), nrow(X_target))]
+      
+      y_target_train <- y_target[-test]
+      X_target_train <- X_target[-test, , drop = FALSE]
+      y_target_test <- y_target[test]
+      X_target_test <- X_target[test, , drop = FALSE]
+      
+      fit_try <- tryCatch(
+        debias_binary_fix(lambda = lambda_delta1,
+                          X = X_target_train, y = y_target_train,
                           t0 = NULL,
                           beta0 = delta_start,
                           betaA = betaA,
@@ -396,150 +526,196 @@ transfer_logistic=function(source=NULL,
                           maxit = maxit,
                           c = c_use,
                           r = 10,
-                          use_linesearch = TRUE)
-  beta_hat=delta$beta
-  #beta_hat=delta_total[lambda_delta_index,]
-
-  if(!intercept){
-    return(list(beta_hat=c(0,beta_hat),betaA_total=betaA_total,loss_trans=loss_trans,loss_debias=loss_debias,betaA=c(0,betaA),lambda_beta=lambda_beta_use,lambda_delta=lambda_delta_use))
+                          use_linesearch = TRUE),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(fit_try)) {
+        delta <- fit_try$beta
+        loss[i2] <- loss_logit(beta = delta, y = y_target_test, X = X_target_test)
+      }
+    }
+    
+    loss_debias[i1] <- .safe_mean(loss)
+    
+    if (!is.null(delta)) {
+      delta_total[i1, ] <- delta
+    }
   }
-  if(intercept){
-    return(list(beta_hat=beta_hat,betaA_total=betaA_total,loss_trans=loss_trans,loss_debias=loss_debias,betaA=betaA,lambda_beta=lambda_beta_use,lambda_delta=lambda_delta_use))
+  
+  good_idx_delta <- which(is.finite(loss_debias))
+  if (length(good_idx_delta) == 0) {
+    stop("All debias lambda values failed")
   }
-
+  
+  min_loss_delta <- min(round(loss_debias[good_idx_delta], digits = 4))
+  lambda_delta_use <- max(lambda_delta[round(loss_debias, digits = 4) == min_loss_delta])
+  
+  delta <- debias_binary_fix(lambda = lambda_delta_use,
+                             X = X_target, y = y_target,
+                             t0 = NULL,
+                             beta0 = delta_start,
+                             betaA = betaA,
+                             tol = tol_debias,
+                             maxit = maxit,
+                             c = c_use,
+                             r = 10,
+                             use_linesearch = TRUE)
+  beta_hat <- delta$beta
+  
+  if (!intercept) {
+    return(list(beta_hat = c(0, beta_hat),
+                betaA_total = betaA_total,
+                loss_trans = loss_trans,
+                loss_debias = loss_debias,
+                betaA = c(0, betaA),
+                lambda_beta = lambda_beta_use,
+                lambda_delta = lambda_delta_use))
+  }
+  if (intercept) {
+    return(list(beta_hat = beta_hat,
+                betaA_total = betaA_total,
+                loss_trans = loss_trans,
+                loss_debias = loss_debias,
+                betaA = betaA,
+                lambda_beta = lambda_beta_use,
+                lambda_delta = lambda_delta_use))
+  }
 }
 
-
-
-transfer_only_logistic=function(
-  target=NULL,
-  lambda_beta=NULL,
-  nfold=3,beta_start=NULL,maxit=300,tol_transfer=1e-4,
-  Ncov=0,nlam=60,intercept=1,C=NULL){
-
-
-  if(is.null(C)){
-    C=rep(1,times=ncol(target$x)-Ncov)
+transfer_only_logistic <- function(target = NULL,
+                                   lambda_beta = NULL,
+                                   nfold = 3, beta_start = NULL, maxit = 300, tol_transfer = 1e-4,
+                                   Ncov = 0, nlam = 60, intercept = 1, C = NULL) {
+  
+  target$x <- as.matrix(target$x)
+  target$y <- as.numeric(target$y)
+  
+  tmp <- .drop_na_xy(target$x, target$y)
+  target$x <- tmp$X
+  target$y <- tmp$y
+  
+  if (is.null(C)) {
+    C <- rep(1, times = ncol(target$x) - Ncov)
   }
-  if(!intercept){
-
-    X_all=target$x
-    y_all=target$y
-
-    p=ncol(X_all)
-    Nmicro=p-Ncov
-
-    if(is.null(beta_start)){
-      beta_start=rep(0,times=p)
+  
+  if (!intercept) {
+    X_all <- target$x
+    y_all <- target$y
+    p <- ncol(X_all)
+    
+    if (is.null(beta_start)) {
+      beta_start <- rep(0, times = p)
     }
-
-    Id=diag(1,nrow=p,ncol=p)
-    c_use=c(rep(0,times=Ncov),C)
-    Pc=c_use%*%t(c_use)/Nmicro
-    X_all=X_all%*%(Id-Pc)
-
-    if(is.null(lambda_beta)){
-      x_std_transfer=base::scale(X_all,center = TRUE,scale=TRUE)
-      p_hat_transfer=mean(y_all)
-      r_transfer=y_all - p_hat_transfer
-      alpha=1
-      grad=drop(crossprod(x_std_transfer, r_transfer)) / nrow(x_std_transfer)
-      lambda_max_transfer=max(abs(grad)) / alpha
-      lambda_min_ratio_transfer=if (nrow(x_std_transfer) > p) 1e-4 else 1e-4
-      lambda_beta=lambda_max_transfer * (lambda_min_ratio_transfer) ^ ((seq_len(nlam) - 1) / (nlam - 1))
+    
+    Id <- diag(1, nrow = p, ncol = p)
+    c_use <- c(rep(0, times = Ncov), C)
+    Pc <- c_use %*% t(c_use) / sum(c_use^2)
+    X_all <- X_all %*% (Id - Pc)
+    
+    tmp <- .drop_na_xy(X_all, y_all)
+    X_all <- tmp$X
+    y_all <- tmp$y
+    
+    if (is.null(lambda_beta)) {
+      lambda_beta <- .make_lambda_seq(X_all, y_all, nlam = nlam)
     }
-
   }
-
-  if(intercept){
-
-    X_all=cbind(1,target$x)
-    y_all=target$y
-
-    p=ncol(X_all)
-    Nmicro=p-Ncov-1
-
-    if(is.null(beta_start)){
-      beta_start=rep(0,times=p)
+  
+  if (intercept) {
+    X_all <- cbind(1, target$x)
+    y_all <- target$y
+    p <- ncol(X_all)
+    
+    if (is.null(beta_start)) {
+      beta_start <- rep(0, times = p)
     }
-
-    Id=diag(1,nrow=p,ncol=p)
-    c_use=c(rep(0,times=Ncov+1),C)
-    Pc=c_use%*%t(c_use)/Nmicro
-    X_all=X_all%*%(Id-Pc)
-
-    if(is.null(lambda_beta)){
-      x_std_transfer=base::scale(X_all[,-1],center = TRUE,scale=TRUE)
-      p_hat_transfer=mean(y_all)
-      r_transfer=y_all - p_hat_transfer
-      alpha=1
-      grad=drop(crossprod(x_std_transfer, r_transfer)) / nrow(x_std_transfer)
-      lambda_max_transfer=max(abs(grad)) / alpha
-      lambda_min_ratio_transfer=if (nrow(x_std_transfer) > p) 1e-4 else 1e-4
-      lambda_beta=lambda_max_transfer * (lambda_min_ratio_transfer) ^ ((seq_len(nlam) - 1) / (nlam - 1))
+    
+    Id <- diag(1, nrow = p, ncol = p)
+    c_use <- c(rep(0, times = Ncov + 1), C)
+    Pc <- c_use %*% t(c_use) / sum(c_use^2)
+    X_all <- X_all %*% (Id - Pc)
+    
+    tmp <- .drop_na_xy(X_all, y_all)
+    X_all <- tmp$X
+    y_all <- tmp$y
+    
+    if (is.null(lambda_beta)) {
+      lambda_beta <- .make_lambda_seq(X_all[, -1, drop = FALSE], y_all, nlam = nlam)
     }
-
   }
-
-  loss_trans=rep(0,times=length(lambda_beta))
-
-  betaA_total=matrix(0,nrow=length(lambda_beta),ncol=p)
-
-  for(i1 in 1:length(lambda_beta)){
-
-    loss=rep(0,times=nfold)
-    lambda_beta1=lambda_beta[i1]
-    for(i2 in 1:nfold){
-
-      c1=1:nrow(X_all)
-      m1=round(nrow(X_all)/nfold,digits = 0)
-      test=c1[(1+(i2-1)*m1):min((i2*m1),nrow(X_all))]
-      X_all_train=X_all[-test,]
-      y_all_train=y_all[-test]
-      X_all_test=X_all[test,]
-      y_all_test=y_all[test]
-
-      betaA=transfer_binary_fix(lambda = lambda_beta1,
-                                X=X_all_train, y=y_all_train,
-                                t0 = NULL,
-                                beta0 = beta_start,
-                                tol = tol_transfer,
-                                maxit = maxit,
-                                c = c_use,
-                                r = 10,
-                                use_linesearch = TRUE)
-      betaA=betaA$beta
-      loss[i2]=loss_logit(beta=betaA,y=y_all_test,X=X_all_test)
-    }
-    loss_trans[i1]=mean(loss)
-
-    betaA_total[i1,]=betaA
-
-  }
-  lambda_beta_use=max(lambda_beta[round(loss_trans,digits = 4)==min(round(loss_trans,digits = 4))])
-  lambda_beta_index=max(c(1:length(lambda_beta))[round(loss_trans,digits = 4)==min(round(loss_trans,digits = 4))])
-  betaA=transfer_binary_fix(lambda = lambda_beta_use,
-                            X=X_all, y=y_all,
+  
+  loss_trans <- rep(NA_real_, times = length(lambda_beta))
+  betaA_total <- matrix(0, nrow = length(lambda_beta), ncol = p)
+  
+  for (i1 in 1:length(lambda_beta)) {
+    loss <- rep(NA_real_, times = nfold)
+    lambda_beta1 <- lambda_beta[i1]
+    betaA <- NULL
+    
+    for (i2 in 1:nfold) {
+      c1 <- 1:nrow(X_all)
+      m1 <- round(nrow(X_all) / nfold, digits = 0)
+      test <- c1[(1 + (i2 - 1) * m1):min((i2 * m1), nrow(X_all))]
+      
+      X_all_train <- X_all[-test, , drop = FALSE]
+      y_all_train <- y_all[-test]
+      X_all_test <- X_all[test, , drop = FALSE]
+      y_all_test <- y_all[test]
+      
+      fit_try <- tryCatch(
+        transfer_binary_fix(lambda = lambda_beta1,
+                            X = X_all_train, y = y_all_train,
                             t0 = NULL,
                             beta0 = beta_start,
                             tol = tol_transfer,
                             maxit = maxit,
                             c = c_use,
                             r = 10,
-                            use_linesearch = TRUE)
-  beta_hat=betaA$beta
-  #betaA=betaA_total[lambda_beta_index,]
-
-  if(!intercept){
-    return(list(beta_hat=c(0,beta_hat)))
+                            use_linesearch = TRUE),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(fit_try)) {
+        betaA <- fit_try$beta
+        loss[i2] <- loss_logit(beta = betaA, y = y_all_test, X = X_all_test)
+      }
+    }
+    
+    loss_trans[i1] <- .safe_mean(loss)
+    
+    if (!is.null(betaA)) {
+      betaA_total[i1, ] <- betaA
+    }
   }
-  if(intercept){
-    return(list(beta_hat=beta_hat))
+  
+  good_idx <- which(is.finite(loss_trans))
+  if (length(good_idx) == 0) {
+    stop("All lambda values failed in transfer_only_logistic")
   }
-
+  
+  min_loss <- min(round(loss_trans[good_idx], digits = 4))
+  lambda_beta_use <- max(lambda_beta[round(loss_trans, digits = 4) == min_loss])
+  
+  betaA <- transfer_binary_fix(lambda = lambda_beta_use,
+                               X = X_all, y = y_all,
+                               t0 = NULL,
+                               beta0 = beta_start,
+                               tol = tol_transfer,
+                               maxit = maxit,
+                               c = c_use,
+                               r = 10,
+                               use_linesearch = TRUE)
+  
+  beta_hat <- betaA$beta
+  
+  if (!intercept) {
+    return(list(beta_hat = c(0, beta_hat)))
+  }
+  if (intercept) {
+    return(list(beta_hat = beta_hat))
+  }
 }
-
-
 
 #' Transfer learning for compositional logistic regression under a zero-sum constraint
 #'
@@ -571,92 +747,170 @@ transfer_only_logistic=function(
 #'   `transferrable_id`. If `source_id = "auto"`, returns those objects plus
 #'   `diff_source`.
 #' @export
-CatlGLM_binomial=function(target_data=NULL,source_data=NULL,nlam=100,Ncov=0,
-                                     nfold=3,source_id="auto",intercept=TRUE,C=NULL,
-                                     lambda_list=list(lambda_transfer=NULL,lambda_debias=NULL),maxit=600,
-                                     tol_transfer=1e-6,tol_debias=1e-6,beta_start=NULL,delta_start=NULL,C0=NULL){
+CatlGLM_binomial <- function(target_data = NULL, source_data = NULL, nlam = 100, Ncov = 0,
+                             nfold = 3, source_id = "auto", intercept = TRUE, C = NULL,
+                             lambda_list = list(lambda_transfer = NULL, lambda_debias = NULL), maxit = 600,
+                             tol_transfer = 1e-6, tol_debias = 1e-6, beta_start = NULL, delta_start = NULL, C0 = NULL) {
   .check_dataset(target_data, "target_data")
   .check_source_list(source_data, "source_data")
   .check_source_id(source_id)
-
-  if(source_id=="auto"){
-
-    LOSS1=matrix(0,nrow=nfold,ncol = length(source_data))
-
-    LOSS1_lasso=numeric()
-    beta_fold_transfer=list()
-    for(i in 1:nfold){
-      beta_fold_transfer[[i]]=list()
+  
+  if (source_id == "auto") {
+    LOSS1 <- matrix(NA_real_, nrow = nfold, ncol = length(source_data))
+    
+    LOSS1_lasso <- rep(NA_real_, nfold)
+    beta_fold_transfer <- vector("list", nfold)
+    for (i in 1:nfold) {
+      beta_fold_transfer[[i]] <- vector("list", length(source_data))
     }
-    score_cv=matrix(0,nrow=nfold,ncol=length(source_data))
-    beta_constrained_lasso=list()
-    est_target=transfer_only_logistic(target=target_data,
-                                      lambda_beta=NULL,nfold=nfold,beta_start=NULL,maxit=400,tol_transfer=1e-5,Ncov=Ncov,nlam=50,intercept=intercept,C=C)
-    INFO=info_logistic_n(y=target_data$y,X=target_data$x,beta=est_target$beta_hat)
-
-    for(i in 1:nfold){
-
-      fold_size=ceiling(length(target_data$y)/nfold)
-      test=(1+(i-1)*fold_size):min(i*fold_size,length(target_data$y))
-      train_x=target_data$x[-test,]
-      train_y=target_data$y[-test]
-      test_x=target_data$x[test,]
-      test_y=target_data$y[test]
-      for(j in 1:length(source_data)){
-
-        est_j=transfer_only_logistic(target=list(x=rbind(train_x,source_data[[j]]$x),y=c(train_y,source_data[[j]]$y)),
-                                     lambda_beta=NULL,nfold=nfold,beta_start=NULL,maxit=400,tol_transfer=1e-5,Ncov=Ncov,nlam=50,intercept=intercept,C=C)
-        beta_fold_transfer[[i]][[j]]=est_j$beta_hat
-        LOSS1[i,j]=loss_logit(beta=est_j$beta_hat,X=cbind(1,test_x),y=test_y)
-
+    score_cv <- matrix(NA_real_, nrow = nfold, ncol = length(source_data))
+    beta_constrained_lasso <- vector("list", nfold)
+    
+    est_target <- transfer_only_logistic(
+      target = target_data,
+      lambda_beta = NULL,
+      nfold = nfold,
+      beta_start = NULL,
+      maxit = 400,
+      tol_transfer = 1e-5,
+      Ncov = Ncov,
+      nlam = 50,
+      intercept = intercept,
+      C = C
+    )
+    
+    INFO <- info_logistic_n(y = target_data$y, X = target_data$x, beta = est_target$beta_hat)
+    
+    for (i in 1:nfold) {
+      fold_size <- ceiling(length(target_data$y) / nfold)
+      test <- (1 + (i - 1) * fold_size):min(i * fold_size, length(target_data$y))
+      train_x <- target_data$x[-test, , drop = FALSE]
+      train_y <- target_data$y[-test]
+      test_x <- target_data$x[test, , drop = FALSE]
+      test_y <- target_data$y[test]
+      
+      for (j in 1:length(source_data)) {
+        est_j <- tryCatch(
+          transfer_only_logistic(
+            target = list(x = rbind(train_x, source_data[[j]]$x), y = c(train_y, source_data[[j]]$y)),
+            lambda_beta = NULL,
+            nfold = nfold,
+            beta_start = NULL,
+            maxit = 400,
+            tol_transfer = 1e-5,
+            Ncov = Ncov,
+            nlam = 50,
+            intercept = intercept,
+            C = C
+          ),
+          error = function(e) NULL
+        )
+        
+        if (!is.null(est_j)) {
+          beta_fold_transfer[[i]][[j]] <- est_j$beta_hat
+          LOSS1[i, j] <- loss_logit(beta = est_j$beta_hat, X = test_x, y = test_y)
+        }
       }
-      lambda_lasso=transfer_only_logistic(target=list(x=train_x,y=train_y),lambda_beta=NULL,nfold=nfold,beta_start=NULL,maxit=400,tol_transfer=1e-5,Ncov=Ncov,nlam=50,intercept=intercept,C=C)
-
-      beta_lasso=lambda_lasso$beta_hat
-
-      LOSS1_lasso[i]=loss_logit(y=test_y,X=cbind(1,test_x),beta=beta_lasso)
-      beta_constrained_lasso[[i]]=beta_lasso
+      
+      lambda_lasso <- tryCatch(
+        transfer_only_logistic(
+          target = list(x = train_x, y = train_y),
+          lambda_beta = NULL,
+          nfold = nfold,
+          beta_start = NULL,
+          maxit = 400,
+          tol_transfer = 1e-5,
+          Ncov = Ncov,
+          nlam = 50,
+          intercept = intercept,
+          C = C
+        ),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(lambda_lasso)) {
+        beta_lasso <- lambda_lasso$beta_hat
+        LOSS1_lasso[i] <- loss_logit(y = test_y, X = test_x, beta = beta_lasso)
+        beta_constrained_lasso[[i]] <- beta_lasso
+      }
+      
       print(i)
     }
-    for(i in 1:nrow(score_cv)){
-      for(j in 1:ncol(score_cv)){
-        score_cv[i,j]=t(beta_fold_transfer[[i]][[j]]-beta_constrained_lasso[[i]])%*%INFO%*%(beta_fold_transfer[[i]][[j]]-beta_constrained_lasso[[i]])/LOSS1_lasso[i]
+    
+    for (i in 1:nrow(score_cv)) {
+      for (j in 1:ncol(score_cv)) {
+        if (!is.null(beta_fold_transfer[[i]][[j]]) &&
+            !is.null(beta_constrained_lasso[[i]]) &&
+            is.finite(LOSS1_lasso[i]) &&
+            LOSS1_lasso[i] > 0) {
+          d <- beta_fold_transfer[[i]][[j]] - beta_constrained_lasso[[i]]
+          score_cv[i, j] <- as.numeric(t(d) %*% INFO %*% d / LOSS1_lasso[i])
+        }
       }
     }
-    LOSS_lasso=mean(LOSS1_lasso)
-    LOSS_lasso_sd=sd(LOSS1_lasso)
-    LOSS=colMeans(LOSS1)
-    score_all=colMeans(score_cv)
-    if(is.null(C0)){
-      C0=min(score_all)
+    
+    LOSS_lasso <- mean(LOSS1_lasso, na.rm = TRUE)
+    LOSS <- colMeans(LOSS1, na.rm = TRUE)
+    score_all <- colMeans(score_cv, na.rm = TRUE)
+    
+    if (is.null(C0)) {
+      if (all(is.na(score_all))) {
+        C0 <- 0
+      } else {
+        C0 <- min(score_all, na.rm = TRUE)
+      }
     }
     
-    good_id=c(1:length(source_data))[LOSS-(1+C0)*LOSS_lasso<=0]
-    diff_source=LOSS-(1+C0)*LOSS_lasso
+    diff_source <- LOSS - (1 + C0) * LOSS_lasso
+    good_id <- c(1:length(source_data))[is.finite(diff_source) & diff_source <= 0]
+    good_source <- source_data[good_id]
     
-    good_source=source_data[good_id]
-    if(length(good_source)==0){
-      cat("no source are good\n", append = TRUE)   # write to .out file
-      stop("Error: no valid IDs found length of \'good_id\' is 0.")
-      flush.console()               # ensure message appears immediately
+    if (length(good_source) == 0) {
+      cat("no source are good\n", append = TRUE)
+      stop("Error: no valid IDs found length of 'good_id' is 0.")
+      flush.console()
     }
-    final=transfer_logistic(source=good_source,
-                            target=target_data,
-                            lambda_beta=lambda_list$lambda_transfer,lambda_delta=lambda_list$lambda_debias,nfold=nfold,beta_start=beta_start,
-                            delta_start=delta_start,maxit=maxit,tol_transfer=tol_transfer,
-                            tol_debias=tol_debias,Ncov=Ncov,nlam=nlam,C=C,intercept = intercept)
-
-
-    return(list(beta_hat=final$beta_hat,transferrable_id=good_id, diff_source=diff_source))
+    
+    final <- transfer_logistic(
+      source = good_source,
+      target = target_data,
+      lambda_beta = lambda_list$lambda_transfer,
+      lambda_delta = lambda_list$lambda_debias,
+      nfold = nfold,
+      beta_start = beta_start,
+      delta_start = delta_start,
+      maxit = maxit,
+      tol_transfer = tol_transfer,
+      tol_debias = tol_debias,
+      Ncov = Ncov,
+      nlam = nlam,
+      C = C,
+      intercept = intercept
+    )
+    
+    return(list(beta_hat = final$beta_hat,
+                transferrable_id = good_id,
+                diff_source = diff_source))
   }
-  if(source_id=="all"){
-
-    final=transfer_logistic(source=source_data,
-                            target=target_data,
-                            lambda_beta=lambda_list$lambda_transfer,lambda_delta=lambda_list$lambda_debias,nfold=nfold,beta_start=beta_start,delta_start=delta_start,maxit=maxit,tol_transfer=tol_transfer,
-                            tol_debias=tol_debias,Ncov=Ncov,nlam=nlam,C=C,intercept = intercept)
-    return(list(beta_hat=final$beta_hat,transferrable_id=c(1:length(source_data))))
+  
+  if (source_id == "all") {
+    final <- transfer_logistic(
+      source = source_data,
+      target = target_data,
+      lambda_beta = lambda_list$lambda_transfer,
+      lambda_delta = lambda_list$lambda_debias,
+      nfold = nfold,
+      beta_start = beta_start,
+      delta_start = delta_start,
+      maxit = maxit,
+      tol_transfer = tol_transfer,
+      tol_debias = tol_debias,
+      Ncov = Ncov,
+      nlam = nlam,
+      C = C,
+      intercept = intercept
+    )
+    return(list(beta_hat = final$beta_hat,
+                transferrable_id = c(1:length(source_data))))
   }
-
-
 }
