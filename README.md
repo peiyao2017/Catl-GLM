@@ -1,11 +1,11 @@
 ---
-title: "CATL Simulation and Implementation"
+title: "CATL-GLM: a novel constraint-aware transfer learning method for compositional data under generalized linear model framework"
 author: "Peiyao Wang, Weixi Chen, Jiyuan Hu"
 ---
 
 # Overview
 
-This R Markdown document reproduces the simulation setup and implementation of constraint-aware transfer learning (CATL) for compositional data in both binomial and Gaussian settings. Users can run the code chunk by chunk or knit the full document after placing all required source files and `.RData` files in the working directory.
+This R Markdown document reproduces the simulation setup and implementation of constraint-aware transfer learning for compositional data under generalized linear model framework (CATL-GLM). Users can run the code chunk by chunk or knit the full document after placing all required source files and `.RData` files in the working directory.
 
 # Required files
 
