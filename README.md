@@ -30,7 +30,8 @@ library(pROC)
 library(coda4microbiome)
 install.packages("remotes")
 library(remotes)
-remotes::install_github("JoJoWeixiChen1/Catl-GLM")
+# Install from GitHub
+remotes::install_github("peiyao2017/Catl-GLM")
 library(CatlGLM)
  
 
