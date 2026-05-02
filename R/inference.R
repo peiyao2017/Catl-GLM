@@ -17,15 +17,15 @@
 #'
 #' @return A list containing `b.hat`, `beta.hat`, `CI`, and `var.est`.
 #' @export
-CatlGLM_inf=function (target=NULL, source = NULL, 
-                              family = c("gaussian", "binomial"), beta.hat = NULL, 
-                              nodewise.transfer.source.id = "all", cores = 1, 
+CatlGLM_inf=function (target=NULL, source = NULL,
+                              family = c("gaussian", "binomial"), beta.hat = NULL,
+                              nodewise.transfer.source.id = "all", cores = 1,
                               level = 0.95, intercept = TRUE,ncov=0) {
   .check_dataset(target, "target")
   .check_source_list(source, "source")
   .check_beta_hat(beta.hat)
   Pc=(c(rep(0,times=ncov),rep(1,times=ncol(target$x)-ncov))/sqrt(sum(rep(1,times=ncol(target$x)-ncov))))%*%(t( c(rep(0,times=ncov),rep(1,times=ncol(target$x)-ncov))/sqrt(sum(rep(1,times=ncol(target$x)-ncov)))))
- 
+
   target$x=target$x%*%(diag(1,nrow=nrow(Pc),ncol=ncol(Pc))-Pc)
 
   for(i in 1:length(source)){
@@ -47,23 +47,23 @@ CatlGLM_inf=function (target=NULL, source = NULL,
   }else {
     beta.hat.names <- NULL
   }
-  
-  
+
+
   beta.hat <- as.vector(beta.hat)
-  if (!is.null(source) && (is.string(nodewise.transfer.source.id) && 
+  if (!is.null(source) && (is.string(nodewise.transfer.source.id) &&
                            nodewise.transfer.source.id == "all")) {
     nodewise.transfer.source.id <- 1:length(source)
   }else if (is.null(source) || is.null(nodewise.transfer.source.id)) {
     nodewise.transfer.source.id <- NULL
   }
-  
+
   D <- list(target = target, source = source)
   for (k in 1:(length(nodewise.transfer.source.id) + 1)) {
     if (k == 1) {
       D$target$x <- as.matrix(D$target$x)
     }
     else {
-      D$source[[nodewise.transfer.source.id[k - 1]]]$x <- as.matrix(D$source[[nodewise.transfer.source.id[k - 
+      D$source[[nodewise.transfer.source.id[k - 1]]]$x <- as.matrix(D$source[[nodewise.transfer.source.id[k -
                                                                                                             1]]]$x)
     }
   }
@@ -71,11 +71,11 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     disper=sqrt(sum((target$y-cbind(1,target$x)%*%beta.hat)^2)/nrow(target$x))
     D.centeralized <- D
     if (intercept) {
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          D.centeralized$source[[nodewise.transfer.source.id[k - 
-                                                               1]]]$x <- cbind(1, D.centeralized$source[[nodewise.transfer.source.id[k - 
+          D.centeralized$source[[nodewise.transfer.source.id[k -
+                                                               1]]]$x <- cbind(1, D.centeralized$source[[nodewise.transfer.source.id[k -
                                                                                                                                        1]]]$x)
         }
         else {
@@ -84,7 +84,7 @@ CatlGLM_inf=function (target=NULL, source = NULL,
       }
     }
     p <- ncol(D.centeralized$target$x)
-    X.comb <- foreach(k = unique(c(0, nodewise.transfer.source.id)), 
+    X.comb <- foreach(k = unique(c(0, nodewise.transfer.source.id)),
                       .combine = "rbind") %do% {
                         if (k > 0) {
                           D.centeralized$source[[k]]$x
@@ -96,14 +96,14 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     Sigma.hat <- t(X.comb) %*% X.comb/nrow(X.comb)
     L <- foreach(j = 1:p, .combine = "rbind") %dopar% {
             D1 <- D.centeralized
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, j]
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, -j]
         }
         else {
@@ -111,11 +111,11 @@ CatlGLM_inf=function (target=NULL, source = NULL,
           D1$target$x <- D1$target$x[, -j]
         }
       }
-      node.lasso <- glmtrans::glmtrans(target = D1$target, source = D1$source, 
-                             family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id, 
+      node.lasso <- glmtrans::glmtrans(target = D1$target, source = D1$source,
+                             family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id,
                              intercept = FALSE, detection.info = FALSE )
       gamma <- node.lasso$beta[-1]
-      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*% 
+      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*%
         gamma
       theta <- rep(1, p)
       theta[-j] <- -gamma
@@ -127,54 +127,54 @@ CatlGLM_inf=function (target=NULL, source = NULL,
       Theta.tilde=(diag(1,nrow=nrow(Pc_int),ncol=ncol(Pc_int))-Pc_int)%*%Theta.hat%*%(diag(1,nrow=nrow(Pc_int),ncol=ncol(Pc_int))-Pc_int)
     }
     if(!intercept){
-      
+
       Theta.tilde=(diag(1,nrow=nrow(Pc),ncol=ncol(Pc))-Pc)%*%Theta.hat%*%(diag(1,nrow=nrow(Pc),ncol=ncol(Pc))-Pc)
     }
     Z <- D$target$y - D$target$x %*% beta.hat[-1] - beta.hat[1]
     if (intercept) {
-      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1, 
+      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1,
                                                            D$target$x)) %*% Z/length(D$target$y)
     }
     else {
-      b.hat <- beta.hat[-1] + Theta.tilde %*% t(D$target$x) %*% 
+      b.hat <- beta.hat[-1] + Theta.tilde %*% t(D$target$x) %*%
         Z/length(D$target$y)
     }
-   
+
     var.est <- diag(Theta.tilde %*% Sigma.hat %*% t(Theta.tilde))
-    CI <- data.frame(b.hat = b.hat, lb = b.hat - disper*qnorm(r.level) * 
-                       sqrt(var.est/length(D$target$y)), ub = b.hat + disper*qnorm(r.level) * 
+    CI <- data.frame(b.hat = b.hat, lb = b.hat - disper*qnorm(r.level) *
+                       sqrt(var.est/length(D$target$y)), ub = b.hat + disper*qnorm(r.level) *
                        sqrt(var.est/length(D$target$y)))
   }
   else if (family == "binomial") {
     Dw <- D
     if (intercept) {
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          uk <- Dw$source[[nodewise.transfer.source.id[k - 
+          uk <- Dw$source[[nodewise.transfer.source.id[k -
                                                          1]]]$x %*% beta.hat[-1] + beta.hat[1]
           wk <- as.vector(sqrt(exp(-1*uk)/((1 + exp(-uk))^2)))
-          Dw$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- cbind(wk, diag(wk, nrow = length(wk)) %*% 
-                                                                     Dw$source[[nodewise.transfer.source.id[k - 
+          Dw$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- cbind(wk, diag(wk, nrow = length(wk)) %*%
+                                                                     Dw$source[[nodewise.transfer.source.id[k -
                                                                                                               1]]]$x)
         }
         else {
           uk <- Dw$target$x %*% beta.hat[-1] + beta.hat[1]
           wk <- as.vector(sqrt(exp(-1*uk)/((1 + exp(-uk))^2)))
-          Dw$target$x <- cbind(wk, diag(wk, nrow = length(wk)) %*% 
+          Dw$target$x <- cbind(wk, diag(wk, nrow = length(wk)) %*%
                                  Dw$target$x)
         }
       }
     }else {
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          uk <- Dw$source[[nodewise.transfer.source.id[k - 
+          uk <- Dw$source[[nodewise.transfer.source.id[k -
                                                          1]]]$x %*% beta.hat[-1]
           wk <- as.vector(sqrt(exp(-1*uk)/((1 + exp(-uk))^2)))
-          Dw$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- diag(wk) %*% Dw$source[[nodewise.transfer.source.id[k - 
+          Dw$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- diag(wk) %*% Dw$source[[nodewise.transfer.source.id[k -
                                                                                                                    1]]]$x
         }
         else {
@@ -184,8 +184,8 @@ CatlGLM_inf=function (target=NULL, source = NULL,
         }
       }
     }
-    
-    Xw <- foreach(k = unique(c(0, nodewise.transfer.source.id)), 
+
+    Xw <- foreach(k = unique(c(0, nodewise.transfer.source.id)),
                   .combine = "rbind") %do% {
                     if (k > 0) {
                       Dw$source[[k]]$x
@@ -198,14 +198,14 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     Sigma.hat <- (t(Xw) %*% Xw)/nrow(Xw)
     L <- foreach(j = 1:p, .combine = "rbind") %dopar% {
             D1 <- Dw
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, j]
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, -j]
         }
         else {
@@ -216,14 +216,14 @@ CatlGLM_inf=function (target=NULL, source = NULL,
           D1$target$x <- D1$target$x[, -j]
         }
       }
-      node.lasso <- try(glmtrans::glmtrans(target = D1$target, source = D1$source, 
-                                 family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id, 
+      node.lasso <- try(glmtrans::glmtrans(target = D1$target, source = D1$source,
+                                 family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id,
                                  intercept = FALSE ))
-      if (class(node.lasso) == "try-error") {
+      if (inherits(node.lasso, "try-error")) {
         stop(paste("errors happened in feature", j))
       }
       gamma <- node.lasso$beta[-1]
-      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*% 
+      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*%
         gamma
       theta <- rep(1, p)
       theta[-j] <- -gamma
@@ -243,30 +243,30 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     u.target <- D$target$x %*% beta.hat[-1] + beta.hat[1]
     Z <- D$target$y - 1/(1 + exp(-u.target))
     if (intercept) {
-      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1, 
+      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1,
                                                            D$target$x)) %*% Z/length(D$target$y)
     }else {
-      b.hat <- beta.hat[-1] + Theta.tilde %*% t(D$target$x) %*% 
+      b.hat <- beta.hat[-1] + Theta.tilde %*% t(D$target$x) %*%
         Z/length(D$target$y)
     }
-    
-    
+
+
     var.est <- diag(Theta.tilde %*% Sigma.hat %*% t(Theta.tilde))
-    CI <- data.frame(b.hat = b.hat, lb = b.hat - qnorm(r.level) * 
-                       sqrt(var.est/length(D$target$y)), ub = b.hat + qnorm(r.level) * 
+    CI <- data.frame(b.hat = b.hat, lb = b.hat - qnorm(r.level) *
+                       sqrt(var.est/length(D$target$y)), ub = b.hat + qnorm(r.level) *
                        sqrt(var.est/length(D$target$y)))
   }
   else if (family == "poisson") {
     Dw <- D
     if (intercept) {
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          uk <- Dw$source[[nodewise.transfer.source.id[k - 
+          uk <- Dw$source[[nodewise.transfer.source.id[k -
                                                          1]]]$x %*% beta.hat[-1] + beta.hat[1]
           wk <- as.vector(exp(uk/2))
-          Dw$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- cbind(wk, diag(wk) %*% Dw$source[[nodewise.transfer.source.id[k - 
+          Dw$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- cbind(wk, diag(wk) %*% Dw$source[[nodewise.transfer.source.id[k -
                                                                                                                              1]]]$x)
         }
         else {
@@ -276,7 +276,7 @@ CatlGLM_inf=function (target=NULL, source = NULL,
         }
       }
     }
-    Xw <- foreach(k = unique(c(0, nodewise.transfer.source.id)), 
+    Xw <- foreach(k = unique(c(0, nodewise.transfer.source.id)),
                   .combine = "rbind") %do% {
                     if (k > 0) {
                       Dw$source[[k]]$x
@@ -289,14 +289,14 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     Sigma.hat <- (t(Xw) %*% Xw)/nrow(Xw)
     L <- foreach(j = 1:p, .combine = "rbind") %dopar% {
             D1 <- Dw
-      for (k in 1:(length(nodewise.transfer.source.id) + 
+      for (k in 1:(length(nodewise.transfer.source.id) +
                    1)) {
         if (k > 1) {
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$y <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, j]
-          D1$source[[nodewise.transfer.source.id[k - 
-                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k - 
+          D1$source[[nodewise.transfer.source.id[k -
+                                                   1]]]$x <- D1$source[[nodewise.transfer.source.id[k -
                                                                                                       1]]]$x[, -j]
         }
         else {
@@ -304,11 +304,11 @@ CatlGLM_inf=function (target=NULL, source = NULL,
           D1$target$x <- D1$target$x[, -j]
         }
       }
-      node.lasso <- glmtrans::glmtrans(target = D1$target, source = D1$source, 
-                             family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id, 
+      node.lasso <- glmtrans::glmtrans(target = D1$target, source = D1$source,
+                             family = "gaussian", alg = "ori", transfer.source.id = nodewise.transfer.source.id,
                              intercept = FALSE )
       gamma <- node.lasso$beta[-1]
-      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*% 
+      tau2 <- Sigma.hat[j, j] - Sigma.hat[j, -j, drop = F] %*%
         gamma
       theta <- rep(1, p)
       theta[-j] <- -gamma
@@ -320,23 +320,23 @@ CatlGLM_inf=function (target=NULL, source = NULL,
       Theta.tilde=(diag(1,nrow=nrow(Pc_int),ncol=ncol(Pc_int))-Pc_int)%*%Theta.hat%*%(diag(1,nrow=nrow(Pc_int),ncol=ncol(Pc_int))-Pc_int)
     }
     if(!intercept){
-      
+
       Theta.tilde=(diag(1,nrow=nrow(Pc),ncol=ncol(Pc))-Pc)%*%Theta.hat%*%(diag(1,nrow=nrow(Pc),ncol=ncol(Pc))-Pc)
     }
     u.target <- D$target$x %*% beta.hat[-1] + beta.hat[1]
     Z <- D$target$y - exp(u.target)
     if (intercept) {
-      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1, 
+      b.hat <- as.matrix(beta.hat) + Theta.tilde %*% t(cbind(1,
                                                            D$target$x)) %*% Z/length(D$target$y)
     }
     else {
-      b.hat <- beta.hat[-1] + Theta.tilde%*% t(D$target$x) %*% 
+      b.hat <- beta.hat[-1] + Theta.tilde%*% t(D$target$x) %*%
         Z/length(D$target$y)
     }
-    
+
     var.est <- diag(Theta.tilde %*% Sigma.hat %*% t(Theta.tilde))
-    CI <- data.frame(b.hat = b.hat, lb = b.hat - qnorm(r.level) * 
-                       sqrt(var.est/length(D$target$y)), ub = b.hat + qnorm(r.level) * 
+    CI <- data.frame(b.hat = b.hat, lb = b.hat - qnorm(r.level) *
+                       sqrt(var.est/length(D$target$y)), ub = b.hat + qnorm(r.level) *
                        sqrt(var.est/length(D$target$y)))
   }
   stopImplicitCluster()
@@ -346,6 +346,6 @@ CatlGLM_inf=function (target=NULL, source = NULL,
     names(b.hat) <- beta.hat.names
     names(beta.hat) <- beta.hat.names
   }
-  return(list(b.hat = b.hat, beta.hat = beta.hat, CI = CI, 
+  return(list(b.hat = b.hat, beta.hat = beta.hat, CI = CI,
               var.est = var.est))
 }
