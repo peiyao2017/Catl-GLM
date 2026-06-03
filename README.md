@@ -12,8 +12,8 @@ This R Markdown document reproduces the simulation setup and implementation of c
 Make sure the following files are available in your working directory:
 
  
-- `effects_both_rare_and_abundant_binomial.RData`
-- `effects_both_rare_and_abundant_linear.RData`
+- `beta_total_binomial.rda`
+- `beta_total_linear.rda`
 
 # Setup
 
@@ -73,7 +73,7 @@ for (i in 1:nrow(sigmax)) {
 ## Load target effects
 
 ```{r binomial-load-effects}
-load("C:/Users/wangp12/Downloads/make readme file/effects_both_rare_and_abundant_binomial.RData")
+load("C:/Users/wangp12/Downloads/make readme file/beta_total_binomial.rda")
 beta_target <- beta_total$beta_target
 beta_target[1] <- int
 ```
@@ -289,7 +289,7 @@ for (i in 1:nrow(sigmax)) {
 ## Load target effects
 
 ```{r linear-load-effects}
-load("C:/Users/wangp12/Downloads/make readme file/effects_both_rare_and_abundant_linear.RData")
+load("C:/Users/wangp12/Downloads/make readme file/beta_total_linear.rda")
 beta_target <- beta_total$beta_target
 beta_target[1] <- int
 ```
