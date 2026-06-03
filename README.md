@@ -5,7 +5,7 @@ author: "Peiyao Wang, Weixi Chen, Jiyuan Hu"
 
 # Overview
 
-This R Markdown document reproduces the simulation setup and implementation of constraint-aware transfer learning for compositional data under generalized linear model framework (CATL-GLM). Users can run the code chunk by chunk or knit the full document after placing all required source files and `.RData` files in the working directory.
+This R Markdown document reproduces the simulation setup and implementation of constraint-aware transfer learning for compositional data under generalized linear model framework (CATL-GLM). Users can run the code chunk by chunk or knit the full document after placing all required source files and `.RData` files in the working directory. The introduction of data harmonization is in section 3.
 
 # Required files
 
@@ -486,9 +486,9 @@ mse_est_detect <- sqrt(
 mse_est_detect
 ```
 
-# Data harmonization
+# 3. Data harmonization
 
-This section gives a reproducible example of data harmonization for transfer learning with microbiome data. To perform data harmonization using the CatlGLM package, all datasets must follow the same rule of variable names, and all missing values should be represented by "NA". The workflow includes:
+This section gives a reproducible example of data harmonization for transfer learning with microbiome data and continuous outcome. To perform data harmonization using the CatlGLM package, all datasets must follow the same rule of variable names, and all missing values should be represented by "NA". The workflow includes:
 
 1. Generating artificial target and source microbiome datasets.
 2. Aligning target and source datasets by common variable names.
@@ -503,13 +503,13 @@ The final output contains a target list and a source list. Each dataset is repre
 - `y`: the outcome vector.
 - `x`: the predictor data frame containing covariates and log-relative-abundance microbiome features.
 
-# Required package
+## Required package
 
 ```{r load-package}
 library(missForest)
 ```
 
-# Generate artificial microbiome data
+## Generate artificial microbiome data
 
 Artificial microbiome and non-microbiome covariates are generated for one target dataset and ten source datasets. Each dataset has mostly common variables, but also some non-common variables. Missing values are represented by `NA`, and zero microbiome relative abundances are also introduced.
 
@@ -717,7 +717,7 @@ beta_source <- all_beta[-1]
 names(beta_source) <- paste0("source", 1:K)
 ```
 
-# Initial alignment of target and source datasets
+## Initial alignment of target and source datasets
 
 The function `align_TL_data()` conducts initial data processing. It removes observations with missing outcome values, keeps only common features across all datasets, and aligns the target and source datasets by variable name.
 
@@ -814,13 +814,13 @@ target_aligned <- aligned_data$target #aligned target data
 source_aligned <- aligned_data$source #aligned source data
 ```
 
-# Microbiome data processing and covariate imputation
+## Microbiome data processing and covariate imputation
 
 The function `process_microbiome_TL_data()` performs the final harmonization step. It first removes samples with too many missing predictor values, then removes covariates and microbiome features with too much missingness. Since each dataset may lose different variables, the function then retains only common covariates and common microbiome features across all datasets.
 
 After removing variables with too many missings, Microbiome variables are processed according to the argument `microbiome.scale`:
 
-- If `microbiome.scale = "count"` or `"relative_abundance"`, remaining microbiome `NA` values are replaced by zero, zeros are replaced by a small positive pseudo-count, values are renormalized to unit row sum, and log-relative abundance is calculated. Missing non-microbiome covariates are imputed by `missForest`, using both covariates and log-relative-abundance microbiome features as predictors.
+- If `microbiome.scale = "count"` or `"relative_abundance"`, remaining microbiome `NA` values are replaced by zero, then all zeros are replaced by a small positive pseudo-count, values are renormalized to unit row sum, and log-relative abundance is calculated. Missing non-microbiome covariates are imputed by `missForest`, using both covariates and log-relative-abundance microbiome features as predictors.
  
 - If `microbiome.scale = "log_relative_abundance"`, values are first converted back to relative abundance by exponentiation, then above processing is performed.
 
@@ -1072,7 +1072,7 @@ process_microbiome_TL_data <- function(
 }
 ```
 
-# Apply the processing function
+## Apply the processing function
 
 The following code applies the microbiome processing function to the aligned target and source datasets. The output format matches the structure commonly required by transfer-learning functions.
 
@@ -1094,7 +1094,7 @@ target_data_harmonized <- harmonized_data$target_data
 source_data_harmonized <- harmonized_data$source_data
 ```
 
-# Inspect the output
+## Inspect the output
 
 The target dataset has an outcome vector `y` and a predictor data frame `x`.
 
@@ -1122,13 +1122,13 @@ harmonized_data$dropped_microbes
 harmonized_data$pseudo.count
 ```
 
-# Notes
+## Notes
 
 For supervised transfer learning, observations with missing outcomes are removed rather than imputed. Missing microbiome values are handled on the relative-abundance scale before log transformation, while missing non-microbiome covariates are imputed using both covariates and microbiome log-relative abundance as predictors.
 
 
 
-# Session info
+## Session info
 
 ```{r session-info}
 sessionInfo()
