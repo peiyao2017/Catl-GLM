@@ -1,5 +1,6 @@
 useDynLib(CatlGLM, .registration = TRUE)
-
+export(align_TL_data)
+export(process_microbiome_TL_data)
 export(CatlGLM_binomial)
 export(CatlGLM_inf)
 export(CatlGLM_linear)

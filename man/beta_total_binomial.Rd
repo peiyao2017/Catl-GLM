@@ -7,16 +7,12 @@
 \format{
 A list containing:
 \itemize{
-  \item \code{beta_target}: numeric vector of true coefficients.
+\item \code{beta_target}: numeric vector of true coefficients.
 }
 }
 \source{
 Simulation
 }
-\usage{
-beta_total_binomial
-}
 \description{
 Simulated coefficient vector for the binomial case.
 }
-\keyword{datasets}

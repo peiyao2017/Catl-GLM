@@ -6,8 +6,12 @@
 #' \itemize{
 #'   \item \code{beta_target}: numeric vector of true coefficients.
 #' }
+#'
 #' @source Simulation
-"beta_total_binomial"
+#' @name beta_total_binomial
+#' @docType data
+NULL
+
 
 #' beta_total_linear
 #'
@@ -17,5 +21,8 @@
 #' \itemize{
 #'   \item \code{beta_target}: numeric vector of true coefficients.
 #' }
+#'
 #' @source Simulation
-"beta_total_linear"
+#' @name beta_total_linear
+#' @docType data
+NULL
