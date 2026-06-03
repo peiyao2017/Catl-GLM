@@ -1,3 +1,28 @@
+#' Align target and source datasets
+#'
+#' Remove observations with missing outcomes, retain only common
+#' features across all datasets, and align feature order.
+#'
+#' @param target A target data frame.
+#' @param source A list of source data frames.
+#' @param outcome Name of the outcome variable.
+#'
+#' @return A list containing:
+#' \itemize{
+#'   \item target: aligned target data frame.
+#'   \item source: aligned source data frames.
+#'   \item common_features: common retained features.
+#'   \item removed_outcome_missing: removed observations due to missing outcome.
+#' }
+#'
+#' @examples
+#' aligned <- harmonize_TL_data(
+#'   target = target_data,
+#'   source = source_data,
+#'   outcome = "Y"
+#' )
+#'
+#' @export
 align_TL_data <- function(target, source, outcome) {
   
   if (!is.data.frame(target)) {
