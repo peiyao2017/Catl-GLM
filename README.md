@@ -11,15 +11,12 @@ This R Markdown document reproduces the simulation setup and implementation of c
 
 Make sure the following files are available in your working directory:
 
- 
-- `beta_total_binomial.rda`
-- `beta_total_linear.rda`
+-   `beta_total_binomial.rda`
+-   `beta_total_linear.rda`
 
 # Setup
 
-Please install Rtools at https://cran.r-project.org/bin/windows/Rtools/ before installing the package.
-
-
+Please install Rtools at <https://cran.r-project.org/bin/windows/Rtools/> before installing the package.
 
 ```{r setup, message=FALSE, warning=FALSE}
 
@@ -73,7 +70,7 @@ for (i in 1:nrow(sigmax)) {
 ## Load target effects
 
 ```{r binomial-load-effects}
-load("C:/Users/wangp12/Downloads/make readme file/beta_total_binomial.rda")
+load("C:/Users/wangp12/Downloads/Catl-GLM-git/data/beta_total_binomial.rda")
 beta_target <- beta_total$beta_target
 beta_target[1] <- int
 ```
@@ -289,7 +286,7 @@ for (i in 1:nrow(sigmax)) {
 ## Load target effects
 
 ```{r linear-load-effects}
-load("C:/Users/wangp12/Downloads/make readme file/beta_total_linear.rda")
+load("C:/Users/wangp12/Downloads/Catl-GLM-git/data/beta_total_linear.rda")
 beta_target <- beta_total$beta_target
 beta_target[1] <- int
 ```
@@ -490,18 +487,18 @@ mse_est_detect
 
 This section gives a reproducible example of data harmonization for transfer learning with microbiome data and continuous outcome. To perform data harmonization using the CatlGLM package, all datasets must follow the same rule of variable names, and all missing values should be represented by "NA". The workflow includes:
 
-1. Generating artificial target and source microbiome datasets.
-2. Aligning target and source datasets by common variable names.
-3. Removing observations with missing outcomes.
-4. Processing microbiome features into log-relative abundance.
-5. Removing variables and samples with excessive missingness.
-6. Imputing missing non-microbiome covariates using `missForest`.
-7. Returning the processed data in a transfer-learning-ready format.
+1.  Generating artificial target and source microbiome datasets.
+2.  Aligning target and source datasets by common variable names.
+3.  Removing observations with missing outcomes.
+4.  Processing microbiome features into log-relative abundance.
+5.  Removing variables and samples with excessive missingness.
+6.  Imputing missing non-microbiome covariates using `missForest`.
+7.  Returning the processed data in a transfer-learning-ready format.
 
 The final output contains a target list and a source list. Each dataset is represented by two elements:
 
-- `y`: the outcome vector.
-- `x`: the predictor data frame containing covariates and log-relative-abundance microbiome features.
+-   `y`: the outcome vector.
+-   `x`: the predictor data frame containing covariates and log-relative-abundance microbiome features.
 
 ## Required package
 
@@ -719,89 +716,8 @@ names(beta_source) <- paste0("source", 1:K)
 
 ## Initial alignment of target and source datasets
 
-The function `align_TL_data()` conducts initial data processing. It removes observations with missing outcome values, keeps only common features across all datasets, and aligns the target and source datasets by variable name.
 
-```{r align-function}
-align_TL_data <- function(target, source, outcome) {
-
-  if (!is.data.frame(target)) {
-    stop("target must be a data.frame.")
-  }
-
-  if (!is.list(source) || !all(sapply(source, is.data.frame))) {
-    stop("source must be a list of data.frames.")
-  }
-
-  all_data <- c(list(target = target), source)
-
-  # Check outcome exists
-  for (i in seq_along(all_data)) {
-    if (!outcome %in% colnames(all_data[[i]])) {
-      stop(paste0(
-        "Outcome column '", outcome,
-        "' is missing in dataset ", i, "."
-      ))
-    }
-  }
-
-  # Remove observations with missing outcomes
-  removed_outcome_missing <- vector("list", length(all_data))
-
-  for (i in seq_along(all_data)) {
-    dat <- all_data[[i]]
-
-    removed_outcome_missing[[i]] <- which(is.na(dat[[outcome]]))
-    dat <- dat[!is.na(dat[[outcome]]), , drop = FALSE]
-
-    all_data[[i]] <- dat
-  }
-
-  # Move outcome to first column
-  all_data <- lapply(all_data, function(dat) {
-    dat[, c(outcome, setdiff(colnames(dat), outcome)), drop = FALSE]
-  })
-
-  # Find common features excluding outcome
-  feature_sets <- lapply(all_data, function(dat) {
-    setdiff(colnames(dat), outcome)
-  })
-
-  common_features <- Reduce(intersect, feature_sets)
-
-  # Use target feature order
-  target_feature_order <- setdiff(
-    colnames(all_data[[1]]),
-    outcome
-  )
-
-  common_features <- target_feature_order[
-    target_feature_order %in% common_features
-  ]
-
-  # Align all datasets
-  all_data <- lapply(all_data, function(dat) {
-    dat[, c(outcome, common_features), drop = FALSE]
-  })
-
-  target_aligned <- all_data[[1]]
-  source_aligned <- all_data[-1]
-
-  if (is.null(names(source)) || any(names(source) == "")) {
-    names(source_aligned) <- paste0("source", seq_along(source_aligned))
-  } else {
-    names(source_aligned) <- names(source)
-  }
-
-  return(list(
-    target = target_aligned,
-    source = source_aligned,
-    common_features = common_features,
-    removed_outcome_missing = removed_outcome_missing
-  ))
-}
-```
-#Initial alignment
-The function align_TL_data conduct initial data processing: only common variables are retained for each data, each data is aligned by variable name and observations with missing outcome values are removed.
+#Initial alignment The function align_TL_data conduct initial data processing: only common variables are retained for each data, each data is aligned by variable name and observations with missing outcome values are removed.
 
 ```{r run-alignment}
 aligned_data <- align_TL_data(
@@ -820,258 +736,10 @@ The function `process_microbiome_TL_data()` performs the final harmonization ste
 
 After removing variables with too many missings, Microbiome variables are processed according to the argument `microbiome.scale`:
 
-- If `microbiome.scale = "count"` or `"relative_abundance"`, remaining microbiome `NA` values are replaced by zero, then all zeros are replaced by a small positive pseudo-count, values are renormalized to unit row sum, and log-relative abundance is calculated. Missing non-microbiome covariates are imputed by `missForest`, using both covariates and log-relative-abundance microbiome features as predictors.
+-   If `microbiome.scale = "count"` or `"relative_abundance"`, remaining microbiome `NA` values are replaced by zero, then all zeros are replaced by a small positive pseudo-count, values are renormalized to unit row sum, and log-relative abundance is calculated. Missing non-microbiome covariates are imputed by `missForest`, using both covariates and log-relative-abundance microbiome features as predictors.
+
+-   If `microbiome.scale = "log_relative_abundance"`, values are first converted back to relative abundance by exponentiation, then above processing is performed.
  
-- If `microbiome.scale = "log_relative_abundance"`, values are first converted back to relative abundance by exponentiation, then above processing is performed.
-
-
-
-```{r process-function}
-process_microbiome_TL_data <- function(
-  target,
-  source,
-  outcome,
-  covariate,
-  microbiome.scale = c("count", "relative_abundance", "log_relative_abundance"),
-  microbe_missing_rate = 0.2,
-  covariate_missing_rate = 0.5,
-  sample_missing_rate = 0.5,
-  pseudo.count = NULL,
-  use.missForest = TRUE
-) {
-
-  microbiome.scale <- match.arg(microbiome.scale)
-
-  if (use.missForest && !requireNamespace("missForest", quietly = TRUE)) {
-    stop("Please install missForest first: install.packages('missForest')")
-  }
-
-  all_data <- c(list(target = target), source)
-
-  for (k in seq_along(all_data)) {
-    if (!outcome %in% colnames(all_data[[k]])) {
-      stop(paste0("Outcome column is missing in dataset ", k, "."))
-    }
-  }
-
-  processed_each <- vector("list", length(all_data))
-  dropped_samples <- vector("list", length(all_data))
-  dropped_covariates <- vector("list", length(all_data))
-  dropped_microbes <- vector("list", length(all_data))
-
-  for (k in seq_along(all_data)) {
-    dat <- all_data[[k]]
-
-    cov_k <- intersect(covariate, colnames(dat))
-    microbe_k <- setdiff(colnames(dat), c(outcome, covariate))
-
-    dat <- dat[, c(outcome, cov_k, microbe_k), drop = FALSE]
-
-    # 1. Remove samples with too many missing predictor values
-    miss_mat <- is.na(dat[, c(cov_k, microbe_k), drop = FALSE])
-    sample_miss <- rowMeans(miss_mat)
-    keep_sample <- sample_miss <= sample_missing_rate
-
-    dropped_samples[[k]] <- which(!keep_sample)
-    dat <- dat[keep_sample, , drop = FALSE]
-
-    # 2. Remove covariates with too much missingness
-    if (length(cov_k) > 0) {
-      cov_miss <- colMeans(is.na(dat[, cov_k, drop = FALSE]))
-      keep_cov <- cov_miss <= covariate_missing_rate
-      dropped_covariates[[k]] <- names(cov_miss)[!keep_cov]
-      cov_k <- names(cov_miss)[keep_cov]
-    } else {
-      dropped_covariates[[k]] <- character(0)
-    }
-
-    # 3. Remove microbiomes with too much missingness
-    if (length(microbe_k) > 0) {
-      microbe_miss <- colMeans(is.na(dat[, microbe_k, drop = FALSE]))
-      keep_microbe <- microbe_miss <= microbe_missing_rate
-      dropped_microbes[[k]] <- names(microbe_miss)[!keep_microbe]
-      microbe_k <- names(microbe_miss)[keep_microbe]
-    } else {
-      dropped_microbes[[k]] <- character(0)
-    }
-
-    processed_each[[k]] <- dat[, c(outcome, cov_k, microbe_k), drop = FALSE]
-  }
-
-  # 4. Retain common covariates and common microbiomes
-  cov_sets <- lapply(processed_each, function(dat) {
-    intersect(covariate, colnames(dat))
-  })
-
-  microbe_sets <- lapply(processed_each, function(dat) {
-    setdiff(colnames(dat), c(outcome, covariate))
-  })
-
-  common_cov <- Reduce(intersect, cov_sets)
-  common_microbe <- Reduce(intersect, microbe_sets)
-
-  common_cov <- covariate[covariate %in% common_cov]
-
-  target_microbe_order <- setdiff(
-    colnames(processed_each[[1]]),
-    c(outcome, covariate)
-  )
-
-  common_microbe <- target_microbe_order[
-    target_microbe_order %in% common_microbe
-  ]
-
-  processed_each <- lapply(processed_each, function(dat) {
-    dat[, c(outcome, common_cov, common_microbe), drop = FALSE]
-  })
-
-  dataset_id <- rep(seq_along(processed_each), sapply(processed_each, nrow))
-  combined <- do.call(rbind, processed_each)
-
-  Y <- combined[[outcome]]
-  cov_dat <- combined[, common_cov, drop = FALSE]
-  microb_dat <- as.matrix(combined[, common_microbe, drop = FALSE])
-  storage.mode(microb_dat) <- "numeric"
-
-  # 5. Convert microbiome data to relative abundance scale
-  if (microbiome.scale == "count") {
-    microb_dat[is.na(microb_dat)] <- 0
-    microb_dat[microb_dat < 0] <- 0
-
-    row_sum <- rowSums(microb_dat)
-    keep_nonzero <- row_sum > 0
-
-    Y <- Y[keep_nonzero]
-    cov_dat <- cov_dat[keep_nonzero, , drop = FALSE]
-    microb_dat <- microb_dat[keep_nonzero, , drop = FALSE]
-    dataset_id <- dataset_id[keep_nonzero]
-
-    RA <- microb_dat / rowSums(microb_dat)
-  }
-
-  if (microbiome.scale == "relative_abundance") {
-    microb_dat[is.na(microb_dat)] <- 0
-    microb_dat[microb_dat < 0] <- 0
-
-    row_sum <- rowSums(microb_dat)
-    keep_nonzero <- row_sum > 0
-
-    Y <- Y[keep_nonzero]
-    cov_dat <- cov_dat[keep_nonzero, , drop = FALSE]
-    microb_dat <- microb_dat[keep_nonzero, , drop = FALSE]
-    dataset_id <- dataset_id[keep_nonzero]
-
-    RA <- microb_dat / rowSums(microb_dat)
-  }
-
-  if (microbiome.scale == "log_relative_abundance") {
-    RA_raw <- exp(microb_dat)
-    RA_raw[is.na(RA_raw)] <- 0
-    RA_raw[RA_raw < 0] <- 0
-
-    row_sum <- rowSums(RA_raw)
-    keep_nonzero <- row_sum > 0
-
-    Y <- Y[keep_nonzero]
-    cov_dat <- cov_dat[keep_nonzero, , drop = FALSE]
-    RA_raw <- RA_raw[keep_nonzero, , drop = FALSE]
-    dataset_id <- dataset_id[keep_nonzero]
-
-    RA <- RA_raw / rowSums(RA_raw)
-  }
-
-  # 6. Replace zero RA by pseudo-count, renormalize, then log-transform
-  if (is.null(pseudo.count)) {
-    pseudo.count <- max(
-      min(RA[RA > 0], na.rm = TRUE) / 2,
-      1e-10
-    )
-  }
-
-  RA[RA == 0] <- pseudo.count
-  RA <- RA / rowSums(RA)
-
-  logRA_df <- as.data.frame(log(RA))
-  colnames(logRA_df) <- common_microbe
-
-  # 7. Impute covariates only, using covariates + logRA as predictors
-  cov_imp <- cov_dat
-
-  if (use.missForest && ncol(cov_imp) > 0 && any(is.na(cov_imp))) {
-    X_for_impute <- data.frame(
-      cov_imp,
-      logRA_df,
-      check.names = FALSE
-    )
-
-    for (v in common_cov) {
-      obs_vals <- na.omit(unique(X_for_impute[[v]]))
-
-      if (length(obs_vals) <= 2 && all(obs_vals %in% c(0, 1))) {
-        X_for_impute[[v]] <- factor(X_for_impute[[v]], levels = c(0, 1))
-      }
-    }
-
-    X_imp <- missForest::missForest(X_for_impute)$ximp
-
-    cov_imp <- X_imp[, common_cov, drop = FALSE]
-  }
-
-  # 8. Reconstruct processed datasets
-  combined_processed <- data.frame(
-    cov_imp,
-    logRA_df,
-    check.names = FALSE
-  )
-
-  processed_split <- split(
-    data.frame(
-      dataset_id = dataset_id,
-      Y = Y,
-      combined_processed,
-      check.names = FALSE
-    ),
-    dataset_id
-  )
-
-  target_df <- processed_split[[as.character(1)]]
-
-  target_data <- list(
-    y = target_df[[outcome]],
-    x = target_df[, setdiff(colnames(target_df), c("dataset_id", outcome)), drop = FALSE]
-  )
-
-  source_data <- vector("list", length(source))
-
-  for (k in seq_along(source)) {
-    source_df <- processed_split[[as.character(k + 1)]]
-
-    source_data[[k]] <- list(
-      y = source_df[[outcome]],
-      x = source_df[, setdiff(colnames(source_df), c("dataset_id", outcome)), drop = FALSE]
-    )
-  }
-
-  if (is.null(names(source)) || any(names(source) == "")) {
-    names(source_data) <- paste0("source", seq_along(source_data))
-  } else {
-    names(source_data) <- names(source)
-  }
-
-  return(list(
-    target_data = target_data,
-    source_data = source_data,
-    outcome = outcome,
-    covariates = common_cov,
-    microbiome_features = common_microbe,
-    dropped_samples = dropped_samples,
-    dropped_covariates = dropped_covariates,
-    dropped_microbes = dropped_microbes,
-    pseudo.count = pseudo.count
-  ))
-}
-```
-
 ## Apply the processing function
 
 The following code applies the microbiome processing function to the aligned target and source datasets. The output format matches the structure commonly required by transfer-learning functions.
@@ -1125,8 +793,6 @@ harmonized_data$pseudo.count
 ## Notes
 
 For supervised transfer learning, observations with missing outcomes are removed rather than imputed. Missing microbiome values are handled on the relative-abundance scale before log transformation, while missing non-microbiome covariates are imputed using both covariates and microbiome log-relative abundance as predictors.
-
-
 
 ## Session info
 
