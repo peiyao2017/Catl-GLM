@@ -1,5 +1,40 @@
- 
-
+#' Process microbiome transfer learning datasets
+#'
+#' Process aligned microbiome datasets by removing highly-missing
+#' samples and features, converting microbiome variables to
+#' log-relative abundance, and imputing non-microbiome covariates.
+#'
+#' @param target Aligned target data frame.
+#' @param source List of aligned source data frames.
+#' @param outcome Outcome variable name.
+#' @param covariate Vector of non-microbiome covariate names.
+#' @param microbiome.scale One of
+#' \code{"count"},
+#' \code{"relative_abundance"},
+#' \code{"log_relative_abundance"}.
+#' @param microbe_missing_rate Missingness threshold for microbiomes.
+#' @param covariate_missing_rate Missingness threshold for covariates.
+#' @param sample_missing_rate Missingness threshold for observations.
+#' @param pseudo.count Small positive value replacing zeros.
+#' @param use.missForest Logical indicating whether missForest is used.
+#'
+#' @return A list containing:
+#' \itemize{
+#'   \item target_data
+#'   \item source_data
+#'   \item covariates
+#'   \item microbiome_features
+#' }
+#'
+#' @examples
+#' processed <- process_microbiome_TL_data(
+#'   target = target_aligned,
+#'   source = source_aligned,
+#'   outcome = "Y",
+#'   covariate = c("cov1","cov2")
+#' )
+#'
+#' @export 
 process_microbiome_TL_data <- function(
     target,
     source,
